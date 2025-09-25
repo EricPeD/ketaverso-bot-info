@@ -1,0 +1,34 @@
+query ($name: String!) {
+  substances(query: $name) {
+    name
+    summary
+    commonNames
+    effects {
+      name
+      url
+    }
+    roas {
+      name
+      dose {
+        units
+        threshold
+        heavy
+        common { min max }
+        light { min max }
+        strong { min max }
+      }
+      duration {
+        onset { min max units }
+        comeup { min max units }
+        peak { min max units }
+        offset { min max units }
+        afterglow { min max units }
+        total { min max units }
+      }
+      bioavailability {
+        min
+        max
+      }
+    }
+  }
+}
