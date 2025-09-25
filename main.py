@@ -210,7 +210,7 @@ def generar_embed_por_roa(info: dict, index: int) -> discord.Embed:
     embed = discord.Embed(
         title=f"💡 {name} - {roa_name}",
         description=summary[:1024],
-        color=0x1abc9c
+        color=0x8e44ad
     )
 
     # 💊 Dosis
@@ -302,4 +302,5 @@ async def mostrar_info_por_roa(interaction: discord.Interaction, info: dict):
     """
 
 if __name__ == "__main__":
+
     client.run(TOKEN)
