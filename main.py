@@ -16,7 +16,7 @@ VALID_SUBSTANCES = list(ALIASES.values())
 
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
-GUILD_ID = int(os.getenv("GUILD_ID"))
+GUILD_ID = 1275929248170901535 #int(os.getenv("GUILD_ID"))
 
 intents = discord.Intents.default()
 client = discord.Client(intents=intents)
@@ -173,14 +173,13 @@ async def info(interaction: discord.Interaction, sustancia: str):
     # No se encontró: sugerencias
     if not substances:
         sugerencias = sugerir_sustancias(sustancia_normalizada)
-        sugerencia_msg = ""
-        if sugerencias:
-            sugerencia_msg = f"\n🔎 ¿Quisiste decir: {', '.join(sugerencias)}?"
-        print(f"❌ [NOT FOUND] Sustancia no encontrada: '{sustancia_input}' (alias: '{sustancia_normalizada}')")
-        return await interaction.followup.send(
-            f"❌ Sustancia no encontrada.{sugerencia_msg}",
-            ephemeral=True
+        sugerencia_msg = "No se encontraron sugerencias." if not sugerencias else f"🔎 ¿Quisiste decir: {', '.join(sugerencias)}?"
+        embed = discord.Embed(
+            title="❌ Sustancia no encontrada",
+            description=sugerencia_msg,
+            color=0x8e44ad
         )
+        return await interaction.followup.send(embed=embed, ephemeral=True)
 
     # ✅ NUEVA forma: usar embed moderno
     info = substances[0]
@@ -192,9 +191,11 @@ async def info(interaction: discord.Interaction, sustancia: str):
         await interaction.followup.send(embed=embed)
 
 def generar_embed_por_roa(info: dict, index: int) -> discord.Embed:
-    """Genera un embed visual con datos de un único ROA, usando emojis y formato claro."""
+    """Genera un embed visual con datos de un único ROA, usando emojis y formato claro, incluyendo campos globales."""
     name = info.get("name", "Desconocido")
     summary = info.get("summary", "")
+    common_names = info.get("commonNames", [])
+    effects = info.get("effects", [])
     roas = info.get("roas", [])
     roa = roas[index]
     roa_name = roa.get("name", "Desconocido").capitalize()
@@ -212,6 +213,18 @@ def generar_embed_por_roa(info: dict, index: int) -> discord.Embed:
         description=summary[:1024],
         color=0x8e44ad
     )
+
+    # 🧪 Alias / nombres comunes
+    if common_names:
+        safe_add_field(embed, name="🔹 También llamado", value=", ".join(common_names), inline=False)
+
+    # 🎯 Efectos
+    if effects:
+        limit = 10
+        lista = ", ".join(effect["name"] for effect in effects[:limit])
+        if len(effects) > limit:
+            lista += f"\n[Ver todos los efectos](https://psychonautwiki.org/wiki/{name.replace(' ', '_')}#Effects)"
+        safe_add_field(embed, name="🎯 Efectos", value=lista, inline=False)
 
     # 💊 Dosis
     dosis_txt = []
@@ -256,7 +269,7 @@ def generar_embed_por_roa(info: dict, index: int) -> discord.Embed:
     # 📈 Biodisponibilidad
     if bio and "min" in bio and "max" in bio:
         bio_val = f"{bio['min']}–{bio['max']}%"
-        embed.add_field(name="📈 Biodisponibilidad", value=f"*{bio_val}*", inline=False)
+        safe_add_field(embed, name="📈 Biodisponibilidad", value=f"*{bio_val}*", inline=False)
 
     embed.set_footer(text=f"ROA {index + 1} de {len(roas)}")
 
@@ -302,5 +315,4 @@ async def mostrar_info_por_roa(interaction: discord.Interaction, info: dict):
     """
 
 if __name__ == "__main__":
-
     client.run(TOKEN)
