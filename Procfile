@@ -1,1 +1,1 @@
-worker: python ketaverso-info-bot.py
+worker: python main.py
