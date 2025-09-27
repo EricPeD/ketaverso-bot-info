@@ -16,7 +16,7 @@ VALID_SUBSTANCES = list(ALIASES.values())
 
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
-GUILD_ID = 1275929248170901535, 1257517677342359633 #int(os.getenv("GUILD_ID"))
+GUILD_ID = int(os.getenv("GUILD_ID"))
 
 intents = discord.Intents.default()
 client = discord.Client(intents=intents)
@@ -316,4 +316,5 @@ async def mostrar_info_por_roa(interaction: discord.Interaction, info: dict):
 
 if __name__ == "__main__":
     client.run(TOKEN)
+
 
