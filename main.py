@@ -16,17 +16,19 @@ VALID_SUBSTANCES = list(ALIASES.values())
 
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
-GUILD_ID = int(os.getenv("GUILD_ID"))
+# Cargar GUILD_ID como lista de enteros
+GUILD_IDS = [int(id.strip()) for id in os.getenv("GUILD_ID", "").split(",") if id.strip()]
 
 intents = discord.Intents.default()
 client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
-guild = discord.Object(id=GUILD_ID)
 
 
 @client.event
 async def on_ready():
-    await tree.sync(guild=guild)
+    for guild_id in GUILD_IDS:
+        guild = discord.Object(id=guild_id)
+        await tree.sync(guild=guild)  # Sincroniza para cada guild
     print(f"✅ Bot conectado como {client.user}")
 
 def safe_add_field(embed, *, name, value, inline=False):
@@ -121,8 +123,8 @@ def sugerir_sustancias(nombre: str, n=3) -> list[str]:
 
 @tree.command(
     name="info",
-    description="Obtiene información de una sustancia desde PsychonautWiki",
-    guild=guild
+    description="Obtiene información de una sustancia desde PsychonautWiki"
+    # Quitamos guild=guild para que no esté limitado
 )
 @app_commands.describe(sustancia="Nombre de la sustancia a buscar")
 async def info(interaction: discord.Interaction, sustancia: str):
@@ -133,7 +135,7 @@ async def info(interaction: discord.Interaction, sustancia: str):
         query = f.read()
 
     headers = {
-        "User-Agent": "KetaversoBot/1.0 (https://github.com/Triskis777/ketaverso-bot-info)",
+        "User-Agent": "KetaversoBot/1.0[](https://github.com/Triskis777/ketaverso-bot-info)",
         "Accept": "application/json",
         "Content-Type": "application/json"
     }
@@ -316,5 +318,3 @@ async def mostrar_info_por_roa(interaction: discord.Interaction, info: dict):
 
 if __name__ == "__main__":
     client.run(TOKEN)
-
-
