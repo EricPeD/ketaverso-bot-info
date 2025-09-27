@@ -25,9 +25,18 @@ guild = discord.Object(id=GUILD_ID)  # Definimos guild aquí para que esté disp
 
 @client.event
 async def on_ready():
-    await tree.sync(guild=guild)  # Sincroniza solo para este guild
-    print(f"✅ Bot conectado como {client.user}")
-    print(f"🔍 Sincronizado para guild ID: {GUILD_ID}")  # Print de depuración para verificar
+    try:
+        if not os.path.exists("synced.txt"):  # Solo sync si no está sincronizado
+            print(f"🔄 Intentando sincronizar comandos para guild ID: {GUILD_ID}")
+            await tree.sync(guild=guild)
+            with open("synced.txt", "w") as f:
+                f.write("synced")
+            print(f"✅ Comandos sincronizados para guild ID: {GUILD_ID}")
+        else:
+            print(f"🔍 Comandos ya sincronizados – saltando para evitar rate limit")
+        print(f"✅ Bot conectado como {client.user}")
+    except Exception as e:
+        print(f"❌ Error en on_ready: {e}")
 
 def safe_add_field(embed, *, name, value, inline=False):
     """Agrega campos al embed de forma segura y truncada."""
@@ -316,5 +325,6 @@ async def mostrar_info_por_roa(interaction: discord.Interaction, info: dict):
 
 if __name__ == "__main__":
     client.run(TOKEN)
+
 
 
