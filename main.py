@@ -17,7 +17,7 @@ VALID_SUBSTANCES = list(ALIASES.values())
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
 # Cargar GUILD_ID como lista de enteros
-GUILD_IDS = [int(id.strip()) for id in os.getenv("GUILD_ID", "").split(",") if id.strip()]
+GUILD_ID = int(os.getenv("GUILD_ID"))
 
 intents = discord.Intents.default()
 client = discord.Client(intents=intents)
@@ -26,9 +26,7 @@ tree = app_commands.CommandTree(client)
 
 @client.event
 async def on_ready():
-    for guild_id in GUILD_IDS:
-        guild = discord.Object(id=guild_id)
-        await tree.sync(guild=guild)  # Sincroniza para cada guild
+    await tree.sync(guild=guild)  # Sincroniza para cada guild
     print(f"✅ Bot conectado como {client.user}")
 
 def safe_add_field(embed, *, name, value, inline=False):
@@ -318,3 +316,4 @@ async def mostrar_info_por_roa(interaction: discord.Interaction, info: dict):
 
 if __name__ == "__main__":
     client.run(TOKEN)
+
