@@ -33,6 +33,17 @@ VALID_SUBSTANCES = list(ALIASES.values())
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
 
+ADMIN_USER_IDS_STR = os.getenv("ADMIN_USER_IDS")
+ADMIN_USER_IDS = []
+if ADMIN_USER_IDS_STR:
+    try:
+        ADMIN_USER_IDS = [int(uid.strip()) for uid in ADMIN_USER_IDS_STR.split(',')]
+        logger.info(f"✅ IDs de administradores cargados: {ADMIN_USER_IDS}")
+    except ValueError:
+        logger.error("❌ ADMIN_USER_IDS en .env no contiene solo números separados por comas. Por favor, revisa el formato.")
+else:
+    logger.warning("⚠️ Variable ADMIN_USER_IDS no encontrada en .env. No se enviarán reportes a administradores.")
+
 intents = discord.Intents.default()
 client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
@@ -51,16 +62,21 @@ ROA_EMOJIS = {
     "smoked": "🚬💨",
     "intravenous": "💉🩸",
     "intramuscular": "💉💪",
-    "sublingual": "👅"
+    "sublingual": "👅",
+    "rectal": "🎯 💩"
 }
 
 @client.event
 async def on_ready():
-    """Sincroniza los comandos globales al iniciar."""
+    """Sincroniza los comandos del bot al iniciar."""
     try:
-        await tree.sync()
-        logger.info(f"✅ Comandos globales sincronizados.")
+        guild_id = int(os.getenv("GUILD_ID")) # Cargar GUILD_ID desde .env
+        guild = discord.Object(id=guild_id)
+        await tree.sync(guild=guild)
+        logger.info(f"✅ Comandos sincronizados para el Guild ID: {guild_id}.")
         logger.info(f"✅ Bot conectado como {client.user}")
+    except Exception as e:
+        logger.error(f"❌ Error en on_ready: {e}", exc_info=True)
     except Exception as e:
         logger.error(f"❌ Error en on_ready: {e}", exc_info=True)
 
@@ -173,7 +189,7 @@ async def info(interaction: discord.Interaction, sustancia: str):
         sugerencia_msg = "No se encontraron sugerencias." if not sugerencias else f"🔎 ¿Quisiste decir: {', '.join(sugerencias)}?"
         embed = discord.Embed(
             title="❌ Sustancia no encontrada",
-            description=sugerencia_msg,
+            description=f"{sugerencia_msg}\nSi crees que esto es un error o que falta un alias, puedes informarnos usando el comando `/report`.",
             color=0x8e44ad
         )
         return await interaction.followup.send(embed=embed, ephemeral=True)
@@ -185,6 +201,62 @@ async def info(interaction: discord.Interaction, sustancia: str):
     else:
         embed = generar_embed_por_roa(info_data, 0)
         await interaction.followup.send(embed=embed)
+
+@tree.command(name="report", description="Envía un reporte a los administradores del bot sobre un alias que falta o un error.")
+@app_commands.describe(
+    termino_buscado="El término de búsqueda que no funcionó (ej: metanfetamina)",
+    sugerencia_alias="El alias correcto en inglés si lo conoces (ej: methamphetamine)",
+    notas_adicionales="Cualquier comentario adicional para los administradores"
+)
+async def report(
+    interaction: discord.Interaction,
+    termino_buscado: str,
+    sugerencia_alias: str = None,
+    notas_adicionales: str = None
+):
+    logger.info(f"Comando /report utilizado por {interaction.user.name} ({interaction.user.id}) para: '{termino_buscado}'")
+    await interaction.response.defer(ephemeral=True) # Defer an ephemeral response
+
+    # 1. Confirmación para el usuario
+    await interaction.followup.send("✅ Tu reporte ha sido enviado a los administradores. ¡Gracias por tu contribución!", ephemeral=True)
+
+    if not ADMIN_USER_IDS:
+        logger.warning("No se enviaron reportes. No hay ADMIN_USER_IDS configurados.")
+        return
+
+    # 2. Construir el embed para los administradores
+    report_embed = discord.Embed(
+        title="🚨 Nuevo Reporte de Alias/Error 🚨",
+        description="Un usuario ha reportado un posible alias faltante o un error.",
+        color=discord.Color.red()
+    )
+    report_embed.add_field(name="👤 Usuario", value=interaction.user.mention, inline=False)
+    report_embed.add_field(name="🔍 Término Buscado", value=f"`{termino_buscado}`", inline=False)
+    if sugerencia_alias:
+        report_embed.add_field(name="💡 Sugerencia de Alias", value=f"`{sugerencia_alias}`", inline=False)
+    if notas_adicionales:
+        report_embed.add_field(name="📝 Notas Adicionales", value=notas_adicionales, inline=False)
+    
+    # Añadir contexto del servidor/canal si está disponible
+    if interaction.guild:
+        report_embed.add_field(name="🏠 Servidor", value=f"{interaction.guild.name} (`{interaction.guild.id}`)", inline=True)
+    if interaction.channel:
+        report_embed.add_field(name="💬 Canal", value=f"{interaction.channel.name} (`{interaction.channel.id}`)", inline=True)
+    
+    report_embed.set_footer(text=f"Reporte generado el {discord.utils.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}")
+
+    # 3. Enviar DMs a los administradores
+    for admin_id in ADMIN_USER_IDS:
+        try:
+            admin_user = await client.fetch_user(admin_id)
+            await admin_user.send(embed=report_embed)
+            logger.info(f"Reporte enviado a admin {admin_user.name} ({admin_id})")
+        except discord.Forbidden:
+            logger.warning(f"No se pudo enviar DM al admin {admin_id}. (DMs bloqueados o bot no puede DMear).")
+        except discord.HTTPException as e:
+            logger.error(f"Error HTTP al enviar DM al admin {admin_id}: {e}")
+        except Exception as e:
+            logger.error(f"Error inesperado al enviar DM al admin {admin_id}: {e}")
 
 def generar_embed_por_roa(info: dict, index: int) -> discord.Embed:
     """Genera un embed visual con datos de un único ROA, usando la base y añadiendo detalles."""
