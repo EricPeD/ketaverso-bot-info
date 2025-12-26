@@ -33,16 +33,15 @@ VALID_SUBSTANCES = list(ALIASES.values())
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
 
-ADMIN_USER_IDS_STR = os.getenv("ADMIN_USER_IDS")
-ADMIN_USER_IDS = []
-if ADMIN_USER_IDS_STR:
+REPORT_CHANNEL_ID = os.getenv("REPORT_CHANNEL_ID")
+if REPORT_CHANNEL_ID:
     try:
-        ADMIN_USER_IDS = [int(uid.strip()) for uid in ADMIN_USER_IDS_STR.split(',')]
-        logger.info(f"✅ IDs de administradores cargados: {ADMIN_USER_IDS}")
+        REPORT_CHANNEL_ID = int(REPORT_CHANNEL_ID)
+        logger.info(f"✅ ID del canal de reportes cargado: {REPORT_CHANNEL_ID}")
     except ValueError:
-        logger.error("❌ ADMIN_USER_IDS en .env no contiene solo números separados por comas. Por favor, revisa el formato.")
+        logger.error("❌ REPORT_CHANNEL_ID en .env no es un número válido. Por favor, revisa el formato.")
 else:
-    logger.warning("⚠️ Variable ADMIN_USER_IDS no encontrada en .env. No se enviarán reportes a administradores.")
+    logger.warning("⚠️ Variable REPORT_CHANNEL_ID no encontrada en .env. Los reportes no se enviarán a un canal.")
 
 intents = discord.Intents.default()
 client = discord.Client(intents=intents)
@@ -220,11 +219,11 @@ async def report(
     # 1. Confirmación para el usuario
     await interaction.followup.send("✅ Tu reporte ha sido enviado a los administradores. ¡Gracias por tu contribución!", ephemeral=True)
 
-    if not ADMIN_USER_IDS:
-        logger.warning("No se enviaron reportes. No hay ADMIN_USER_IDS configurados.")
+    if not REPORT_CHANNEL_ID:
+        logger.warning("No se envió el reporte. No hay REPORT_CHANNEL_ID configurado.")
         return
 
-    # 2. Construir el embed para los administradores
+    # 2. Construir el embed para el canal de reportes
     report_embed = discord.Embed(
         title="🚨 Nuevo Reporte de Alias/Error 🚨",
         description="Un usuario ha reportado un posible alias faltante o un error.",
@@ -237,26 +236,24 @@ async def report(
     if notas_adicionales:
         report_embed.add_field(name="📝 Notas Adicionales", value=notas_adicionales, inline=False)
     
-    # Añadir contexto del servidor/canal si está disponible
+    # Añadir contexto del servidor/canal desde donde se hizo el reporte
     if interaction.guild:
-        report_embed.add_field(name="🏠 Servidor", value=f"{interaction.guild.name} (`{interaction.guild.id}`)", inline=True)
+        report_embed.add_field(name="🏠 Servidor (Reporte)", value=f"{interaction.guild.name} (`{interaction.guild.id}`)", inline=True)
     if interaction.channel:
-        report_embed.add_field(name="💬 Canal", value=f"{interaction.channel.name} (`{interaction.channel.id}`)", inline=True)
+        report_embed.add_field(name="💬 Canal (Reporte)", value=f"{interaction.channel.mention} (`{interaction.channel.id}`)", inline=True)
     
     report_embed.set_footer(text=f"Reporte generado el {discord.utils.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}")
 
-    # 3. Enviar DMs a los administradores
-    for admin_id in ADMIN_USER_IDS:
-        try:
-            admin_user = await client.fetch_user(admin_id)
-            await admin_user.send(embed=report_embed)
-            logger.info(f"Reporte enviado a admin {admin_user.name} ({admin_id})")
-        except discord.Forbidden:
-            logger.warning(f"No se pudo enviar DM al admin {admin_id}. (DMs bloqueados o bot no puede DMear).")
-        except discord.HTTPException as e:
-            logger.error(f"Error HTTP al enviar DM al admin {admin_id}: {e}")
-        except Exception as e:
-            logger.error(f"Error inesperado al enviar DM al admin {admin_id}: {e}")
+    # 3. Enviar el embed al canal de reportes
+    try:
+        report_channel = client.get_channel(REPORT_CHANNEL_ID)
+        if report_channel:
+            await report_channel.send(embed=report_embed)
+            logger.info(f"Reporte enviado al canal #{report_channel.name} ({REPORT_CHANNEL_ID})")
+        else:
+            logger.error(f"❌ No se encontró el canal con ID {REPORT_CHANNEL_ID}. Asegúrate de que el bot tenga acceso a él y los permisos necesarios.")
+    except Exception as e:
+        logger.error(f"❌ Error al enviar el reporte al canal {REPORT_CHANNEL_ID}: {e}", exc_info=True)
 
 def generar_embed_por_roa(info: dict, index: int) -> discord.Embed:
     """Genera un embed visual con datos de un único ROA, usando la base y añadiendo detalles."""
