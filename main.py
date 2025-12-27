@@ -43,6 +43,17 @@ if REPORT_CHANNEL_ID:
 else:
     logger.warning("⚠️ Variable REPORT_CHANNEL_ID no encontrada en .env. Los reportes no se enviarán a un canal.")
 
+BOT_ADMIN_USER_IDS_STR = os.getenv("BOT_ADMIN_USER_IDS")
+BOT_ADMIN_USER_IDS = []
+if BOT_ADMIN_USER_IDS_STR:
+    try:
+        BOT_ADMIN_USER_IDS = [int(uid.strip()) for uid in BOT_ADMIN_USER_IDS_STR.split(',')]
+        logger.info(f"✅ IDs de administradores del bot cargados: {BOT_ADMIN_USER_IDS}")
+    except ValueError:
+        logger.error("❌ BOT_ADMIN_USER_IDS en .env no contiene solo números separados por comas. Por favor, revisa el formato.")
+else:
+    logger.warning("⚠️ Variable BOT_ADMIN_USER_IDS no encontrada en .env. El comando /alias no estará restringido.")
+
 intents = discord.Intents.default()
 client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
@@ -53,6 +64,16 @@ def normalizar_texto(texto: str) -> str:
     without_accents = "".join([c for c in nfkd_form if not unicodedata.combining(c)])
     normalized = without_accents.replace('ñ', 'n').replace('Ñ', 'N')
     return normalized.lower()
+
+def is_bot_admin_check():
+    """Verifica si el usuario que invoca el comando es un administrador del bot."""
+    async def predicate(interaction: discord.Interaction) -> bool:
+        if interaction.user.id not in BOT_ADMIN_USER_IDS:
+            logger.warning(f"Intento de usar comando de admin por no-admin: {interaction.user.name} ({interaction.user.id})")
+            await interaction.response.send_message("❌ No tienes permiso para usar este comando.", ephemeral=True)
+            return False
+        return True
+    return app_commands.check(predicate)
 
 # Mapeo de ROA a emoji (ámbito global)
 ROA_EMOJIS = {
@@ -254,6 +275,95 @@ async def report(
             logger.error(f"❌ No se encontró el canal con ID {REPORT_CHANNEL_ID}. Asegúrate de que el bot tenga acceso a él y los permisos necesarios.")
     except Exception as e:
         logger.error(f"❌ Error al enviar el reporte al canal {REPORT_CHANNEL_ID}: {e}", exc_info=True)
+
+@tree.command(name="alias", description="Añade o actualiza un alias para una sustancia (solo admins).")
+@app_commands.describe(
+    alias_name="El nombre común o alias (ej: 'metanfetamina', 'keta')",
+    target_name="El nombre canónico de la sustancia en la API (ej: 'Methamphetamine', 'Ketamine')"
+)
+@is_bot_admin_check() # Aplica la verificación de administrador
+async def alias(
+    interaction: discord.Interaction,
+    alias_name: str,
+    target_name: str
+):
+    logger.info(f"Comando /alias utilizado por admin {interaction.user.name} ({interaction.user.id}) para añadir/actualizar '{alias_name}' -> '{target_name}'")
+    await interaction.response.defer(ephemeral=True)
+
+    normalized_alias = normalizar_texto(alias_name)
+    normalized_target = target_name.lower().strip()
+
+    global ALIASES, VALID_SUBSTANCES # Declarar globales para modificar en su lugar
+
+    ALIASES[normalized_alias] = normalized_target
+    if normalized_target not in VALID_SUBSTANCES:
+        VALID_SUBSTANCES.append(normalized_target)
+
+    try:
+        with open("alias.json", "w", encoding="utf-8") as f:
+            json.dump(ALIASES, f, ensure_ascii=False, indent=4)
+        # Recargar VALID_SUBSTANCES por si target_name no estaba y se añadió
+        VALID_SUBSTANCES = list(set(ALIASES.values())) # Usar set para evitar duplicados
+        logger.info(f"Alias '{alias_name}' (normalizado a '{normalized_alias}') -> '{target_name}' guardado y alias.json actualizado.")
+        await interaction.followup.send(f"✅ Alias '{alias_name}' (normalizado a '{normalized_alias}') ahora apunta a '{target_name}'. Los alias han sido actualizados.", ephemeral=True)
+    except IOError as e:
+        logger.error(f"Error al guardar alias.json: {e}", exc_info=True)
+        await interaction.followup.send(f"❌ Error al guardar el alias en el fichero. Por favor, revisa los logs del bot.", ephemeral=True)
+    except Exception as e:
+        logger.error(f"Error inesperado al gestionar el alias: {e}", exc_info=True)
+        await interaction.followup.send(f"❌ Ocurrió un error inesperado. Por favor, revisa los logs del bot.", ephemeral=True)
+
+@tree.command(name="aliases", description="Muestra todos los alias configurados (solo admins).")
+@is_bot_admin_check()
+async def aliases(interaction: discord.Interaction):
+    logger.info(f"Comando /aliases utilizado por admin {interaction.user.name} ({interaction.user.id})")
+    await interaction.response.defer(ephemeral=True)
+
+    if not ALIASES:
+        embed = discord.Embed(
+            title="📚 Lista de Alias",
+            description="No hay alias configurados actualmente.",
+            color=discord.Color.blue()
+        )
+        await interaction.followup.send(embed=embed, ephemeral=True)
+        return
+
+    aliases_list = [f"`{alias}` -> `{target}`" for alias, target in ALIASES.items()]
+    
+    # Dividir la lista de alias en chunks que quepan en un embed.
+    # Cada embed.description tiene un límite de 4096 caracteres.
+    # Cada embed.field.value tiene un límite de 1024 caracteres.
+    # Vamos a usar la descripción para la lista, dividiéndola en embeds si es necesario.
+    
+    current_description = ""
+    embeds_to_send = []
+    
+    for item in aliases_list:
+        if len(current_description) + len(item) + 1 > 4000: # Dejar espacio para el footer, etc.
+            embed = discord.Embed(
+                title="📚 Lista de Alias (continuación)",
+                description=current_description,
+                color=discord.Color.blue()
+            )
+            embeds_to_send.append(embed)
+            current_description = item + "\n"
+        else:
+            current_description += item + "\n"
+    
+    if current_description: # Añadir el último embed
+        embed = discord.Embed(
+            title="📚 Lista de Alias" if not embeds_to_send else "📚 Lista de Alias (continuación)",
+            description=current_description,
+            color=discord.Color.blue()
+        )
+        embeds_to_send.append(embed)
+
+    for i, embed_item in enumerate(embeds_to_send):
+        embed_item.set_footer(text=f"Página {i+1} de {len(embeds_to_send)}")
+        if i == 0:
+            await interaction.followup.send(embed=embed_item, ephemeral=True)
+        else:
+            await interaction.followup.send(embed=embed_item, ephemeral=True)
 
 def generar_embed_por_roa(info: dict, index: int) -> discord.Embed:
     """Genera un embed visual con datos de un único ROA, usando la base y añadiendo detalles."""
