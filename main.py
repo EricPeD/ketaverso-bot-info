@@ -90,15 +90,12 @@ ROA_EMOJIS = {
 async def on_ready():
     """Sincroniza los comandos del bot al iniciar."""
     try:
-        guild_id = int(os.getenv("GUILD_ID")) # Cargar GUILD_ID desde .env
-        guild = discord.Object(id=guild_id)
-        await tree.sync(guild=guild)
-        logger.info(f"✅ Comandos sincronizados para el Guild ID: {guild_id}.")
+        # Sincronización global de comandos
+        await tree.sync()
+        logger.info("✅ Comandos sincronizados globalmente.")
         logger.info(f"✅ Bot conectado como {client.user}")
     except Exception as e:
-        logger.error(f"❌ Error en on_ready: {e}", exc_info=True)
-    except Exception as e:
-        logger.error(f"❌ Error en on_ready: {e}", exc_info=True)
+        logger.error(f"❌ Error en on_ready durante la sincronización global: {e}", exc_info=True)
 
 def safe_add_field(embed, *, name, value, inline=False):
     """Agrega campos al embed de forma segura y truncada."""
@@ -314,7 +311,6 @@ async def alias(
         await interaction.followup.send(f"❌ Ocurrió un error inesperado. Por favor, revisa los logs del bot.", ephemeral=True)
 
 @tree.command(name="aliases", description="Muestra todos los alias configurados (solo admins).")
-@is_bot_admin_check()
 async def aliases(interaction: discord.Interaction):
     logger.info(f"Comando /aliases utilizado por admin {interaction.user.name} ({interaction.user.id})")
     await interaction.response.defer(ephemeral=True)
