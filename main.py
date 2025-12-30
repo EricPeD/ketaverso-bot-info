@@ -273,44 +273,75 @@ async def report(
     except Exception as e:
         logger.error(f"❌ Error al enviar el reporte al canal {REPORT_CHANNEL_ID}: {e}", exc_info=True)
 
+class ConfirmAliasView(discord.ui.View):
+    def __init__(self, alias_name: str, target_name: str, normalized_alias: str, normalized_target: str):
+        super().__init__(timeout=180)
+        self.alias_name = alias_name
+        self.target_name = target_name
+        self.normalized_alias = normalized_alias
+        self.normalized_target = normalized_target
+
+    async def disable_buttons(self, interaction: discord.Interaction):
+        """Deshabilita todos los botones y actualiza el mensaje."""
+        for item in self.children:
+            item.disabled = True
+        await interaction.edit_original_response(view=self)
+
+    @discord.ui.button(label="Confirmar", style=discord.ButtonStyle.success, emoji="✅")
+    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        global ALIASES, VALID_SUBSTANCES
+
+        ALIASES[self.normalized_alias] = self.normalized_target
+        if self.normalized_target not in VALID_SUBSTANCES:
+            VALID_SUBSTANCES.append(self.normalized_target)
+
+        try:
+            with open("alias.json", "w", encoding="utf-8") as f:
+                json.dump(ALIASES, f, ensure_ascii=False, indent=4)
+            VALID_SUBSTANCES = list(set(ALIASES.values()))
+            logger.info(f"Admin {interaction.user.name} confirmó y guardó el alias '{self.alias_name}' -> '{self.target_name}'.")
+            await interaction.response.send_message(f"✅ Alias '{self.alias_name}' ahora apunta a '{self.target_name}'.", ephemeral=True)
+        except IOError as e:
+            logger.error(f"Error al guardar alias.json: {e}", exc_info=True)
+            await interaction.response.send_message("❌ Error al guardar el alias en el fichero.", ephemeral=True)
+        
+        await self.disable_buttons(interaction)
+        self.stop()
+
+    @discord.ui.button(label="Cancelar", style=discord.ButtonStyle.danger, emoji="❌")
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        logger.info(f"Admin {interaction.user.name} canceló la creación del alias '{self.alias_name}'.")
+        await interaction.response.send_message("❌ Operación cancelada.", ephemeral=True)
+        await self.disable_buttons(interaction)
+        self.stop()
+
 @tree.command(name="alias", description="Añade o actualiza un alias para una sustancia (solo admins).")
 @app_commands.describe(
     alias_name="El nombre común o alias (ej: 'metanfetamina', 'keta')",
     target_name="El nombre canónico de la sustancia en la API (ej: 'Methamphetamine', 'Ketamine')"
 )
-@is_bot_admin_check() # Aplica la verificación de administrador
+@is_bot_admin_check()
 async def alias(
     interaction: discord.Interaction,
     alias_name: str,
     target_name: str
 ):
-    logger.info(f"Comando /alias utilizado por admin {interaction.user.name} ({interaction.user.id}) para añadir/actualizar '{alias_name}' -> '{target_name}'")
-    await interaction.response.defer(ephemeral=True)
-
+    logger.info(f"Comando /alias iniciado por admin {interaction.user.name} para '{alias_name}' -> '{target_name}'")
+    
     normalized_alias = normalizar_texto(alias_name)
     normalized_target = target_name.lower().strip()
 
-    global ALIASES, VALID_SUBSTANCES # Declarar globales para modificar en su lugar
-
-    ALIASES[normalized_alias] = normalized_target
-    if normalized_target not in VALID_SUBSTANCES:
-        VALID_SUBSTANCES.append(normalized_target)
-
-    try:
-        with open("alias.json", "w", encoding="utf-8") as f:
-            json.dump(ALIASES, f, ensure_ascii=False, indent=4)
-        # Recargar VALID_SUBSTANCES por si target_name no estaba y se añadió
-        VALID_SUBSTANCES = list(set(ALIASES.values())) # Usar set para evitar duplicados
-        logger.info(f"Alias '{alias_name}' (normalizado a '{normalized_alias}') -> '{target_name}' guardado y alias.json actualizado.")
-        await interaction.followup.send(f"✅ Alias '{alias_name}' (normalizado a '{normalized_alias}') ahora apunta a '{target_name}'. Los alias han sido actualizados.", ephemeral=True)
-    except IOError as e:
-        logger.error(f"Error al guardar alias.json: {e}", exc_info=True)
-        await interaction.followup.send(f"❌ Error al guardar el alias en el fichero. Por favor, revisa los logs del bot.", ephemeral=True)
-    except Exception as e:
-        logger.error(f"Error inesperado al gestionar el alias: {e}", exc_info=True)
-        await interaction.followup.send(f"❌ Ocurrió un error inesperado. Por favor, revisa los logs del bot.", ephemeral=True)
+    embed = discord.Embed(
+        title="Confirmación de Alias",
+        description=f"¿Estás seguro de que quieres que el alias `{alias_name}` (normalizado: `{normalized_alias}`) apunte a `{target_name}`?",
+        color=discord.Color.orange()
+    )
+    
+    view = ConfirmAliasView(alias_name, target_name, normalized_alias, normalized_target)
+    await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 @tree.command(name="aliases", description="Muestra todos los alias configurados (solo admins).")
+@is_bot_admin_check()
 async def aliases(interaction: discord.Interaction):
     logger.info(f"Comando /aliases utilizado por admin {interaction.user.name} ({interaction.user.id})")
     await interaction.response.defer(ephemeral=True)
